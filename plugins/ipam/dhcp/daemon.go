@@ -66,7 +66,18 @@ func (d *DHCP) Allocate(args *skel.CmdArgs, result *current.Result) error {
 
 	clientID := generateClientID(args.ContainerID, conf.Name, args.IfName)
 	hostNetns := d.hostNetnsPrefix + args.Netns
-	l, err := AcquireLease(clientID, hostNetns, args.IfName, d.clientTimeout)
+
+	cniArgs := struct {
+		types.CommonArgs
+		K8S_POD_NAME types.UnmarshallableString
+	}{}
+
+	err := types.LoadArgs(args.Args, &cniArgs)
+	if err != nil {
+		return fmt.Errorf("error loading args: %v", err)
+	}
+
+	l, err := AcquireLease(clientID, hostNetns, args.IfName, string(cniArgs.K8S_POD_NAME), d.clientTimeout)
 	if err != nil {
 		return err
 	}

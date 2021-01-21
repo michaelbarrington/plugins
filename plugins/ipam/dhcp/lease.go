@@ -50,6 +50,7 @@ const (
 
 type DHCPLease struct {
 	clientID      string
+	hostname      string
 	ack           *dhcp4.Packet
 	opts          dhcp4.Options
 	link          netlink.Link
@@ -66,12 +67,13 @@ type DHCPLease struct {
 // by periodically renewing it. The acquired lease can be released by
 // calling DHCPLease.Stop()
 func AcquireLease(
-	clientID, netns, ifName string,
+	clientID, netns, ifName, hostname string,
 	timeout time.Duration,
 ) (*DHCPLease, error) {
 	errCh := make(chan error, 1)
 	l := &DHCPLease{
 		clientID: clientID,
+		hostname: hostname,
 		stop:     make(chan struct{}),
 		timeout:  timeout,
 	}
@@ -136,6 +138,7 @@ func (l *DHCPLease) acquire() error {
 	opts := make(dhcp4.Options)
 	opts[dhcp4.OptionClientIdentifier] = []byte(l.clientID)
 	opts[dhcp4.OptionParameterRequestList] = []byte{byte(dhcp4.OptionRouter), byte(dhcp4.OptionSubnetMask)}
+	opts[dhcp4.OptionHostName] = []byte(l.hostname)
 
 	pkt, err := backoffRetry(func() (*dhcp4.Packet, error) {
 		ok, ack, err := DhcpRequest(c, opts)
