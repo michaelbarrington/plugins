@@ -80,6 +80,7 @@ func AcquireLease(
 		timeout:   timeout,
 		resendMax: resendMax,
 		broadcast: broadcast,
+		hostname:  hostname,
 	}
 
 	log.Printf("%v: acquiring lease", clientID)
