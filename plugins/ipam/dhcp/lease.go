@@ -58,6 +58,7 @@ type DHCPLease struct {
 	rebindingTime time.Time
 	expireTime    time.Time
 	timeout       time.Duration
+	broadcast     bool
 	stopping      uint32
 	stop          chan struct{}
 	wg            sync.WaitGroup
@@ -68,14 +69,15 @@ type DHCPLease struct {
 // calling DHCPLease.Stop()
 func AcquireLease(
 	clientID, netns, ifName, hostname string,
-	timeout time.Duration,
+	timeout time.Duration, broadcast bool,
 ) (*DHCPLease, error) {
 	errCh := make(chan error, 1)
 	l := &DHCPLease{
-		clientID: clientID,
-		hostname: hostname,
-		stop:     make(chan struct{}),
-		timeout:  timeout,
+		clientID:  clientID,
+		stop:      make(chan struct{}),
+		hostname:  hostname,
+		timeout:   timeout,
+		broadcast: broadcast,
 	}
 
 	log.Printf("%v: acquiring lease", clientID)
@@ -122,7 +124,7 @@ func (l *DHCPLease) Stop() {
 }
 
 func (l *DHCPLease) acquire() error {
-	c, err := newDHCPClient(l.link, l.clientID, l.timeout)
+	c, err := newDHCPClient(l.link, l.clientID, l.timeout, l.broadcast)
 	if err != nil {
 		return err
 	}
@@ -250,7 +252,7 @@ func (l *DHCPLease) downIface() {
 }
 
 func (l *DHCPLease) renew() error {
-	c, err := newDHCPClient(l.link, l.clientID, l.timeout)
+	c, err := newDHCPClient(l.link, l.clientID, l.timeout, l.broadcast)
 	if err != nil {
 		return err
 	}
@@ -281,7 +283,7 @@ func (l *DHCPLease) renew() error {
 func (l *DHCPLease) release() error {
 	log.Printf("%v: releasing lease", l.clientID)
 
-	c, err := newDHCPClient(l.link, l.clientID, l.timeout)
+	c, err := newDHCPClient(l.link, l.clientID, l.timeout, l.broadcast)
 	if err != nil {
 		return err
 	}
@@ -372,6 +374,7 @@ func backoffRetry(f func() (*dhcp4.Packet, error)) (*dhcp4.Packet, error) {
 func newDHCPClient(
 	link netlink.Link, clientID string,
 	timeout time.Duration,
+	broadcast bool,
 ) (*dhcp4client.Client, error) {
 	pktsock, err := dhcp4client.NewPacketSock(link.Attrs().Index)
 	if err != nil {
@@ -381,7 +384,7 @@ func newDHCPClient(
 	return dhcp4client.New(
 		dhcp4client.HardwareAddr(link.Attrs().HardwareAddr),
 		dhcp4client.Timeout(timeout),
-		dhcp4client.Broadcast(false),
+		dhcp4client.Broadcast(broadcast),
 		dhcp4client.Connection(pktsock),
 	)
 }
