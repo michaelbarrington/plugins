@@ -43,13 +43,15 @@ type DHCP struct {
 	leases          map[string]*DHCPLease
 	hostNetnsPrefix string
 	clientTimeout   time.Duration
+	clientResendMax time.Duration
 	broadcast       bool
 }
 
-func newDHCP(clientTimeout time.Duration) *DHCP {
+func newDHCP(clientTimeout, clientResendMax time.Duration) *DHCP {
 	return &DHCP{
-		leases:        make(map[string]*DHCPLease),
-		clientTimeout: clientTimeout,
+		leases:          make(map[string]*DHCPLease),
+		clientTimeout:   clientTimeout,
+		clientResendMax: clientResendMax,
 	}
 }
 
@@ -78,7 +80,7 @@ func (d *DHCP) Allocate(args *skel.CmdArgs, result *current.Result) error {
 		return fmt.Errorf("error loading args: %v", err)
 	}
 
-	l, err := AcquireLease(clientID, hostNetns, args.IfName, string(cniArgs.K8S_POD_NAME), d.clientTimeout, d.broadcast)
+	l, err := AcquireLease(clientID, hostNetns, args.IfName, string(cniArgs.K8S_POD_NAME), d.clientTimeout, d.clientResendMax, d.broadcast)
 	if err != nil {
 		return err
 	}
@@ -172,7 +174,7 @@ func getListener(socketPath string) (net.Listener, error) {
 
 func runDaemon(
 	pidfilePath, hostPrefix, socketPath string,
-	dhcpClientTimeout time.Duration, broadcast bool,
+	dhcpClientTimeout time.Duration, resendMax time.Duration, broadcast bool,
 ) error {
 	// since other goroutines (on separate threads) will change namespaces,
 	// ensure the RPC server does not get scheduled onto those
@@ -193,7 +195,7 @@ func runDaemon(
 		return fmt.Errorf("Error getting listener: %v", err)
 	}
 
-	dhcp := newDHCP(dhcpClientTimeout)
+	dhcp := newDHCP(dhcpClientTimeout, resendMax)
 	dhcp.hostNetnsPrefix = hostPrefix
 	dhcp.broadcast = broadcast
 	rpc.Register(dhcp)

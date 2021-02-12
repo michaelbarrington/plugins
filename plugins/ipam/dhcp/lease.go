@@ -58,6 +58,7 @@ type DHCPLease struct {
 	rebindingTime time.Time
 	expireTime    time.Time
 	timeout       time.Duration
+	resendMax     time.Duration
 	broadcast     bool
 	stopping      uint32
 	stop          chan struct{}
@@ -69,7 +70,7 @@ type DHCPLease struct {
 // calling DHCPLease.Stop()
 func AcquireLease(
 	clientID, netns, ifName, hostname string,
-	timeout time.Duration, broadcast bool,
+	timeout, resendMax time.Duration, broadcast bool,
 ) (*DHCPLease, error) {
 	errCh := make(chan error, 1)
 	l := &DHCPLease{
@@ -77,6 +78,7 @@ func AcquireLease(
 		stop:      make(chan struct{}),
 		hostname:  hostname,
 		timeout:   timeout,
+		resendMax: resendMax,
 		broadcast: broadcast,
 	}
 
@@ -142,7 +144,7 @@ func (l *DHCPLease) acquire() error {
 	opts[dhcp4.OptionParameterRequestList] = []byte{byte(dhcp4.OptionRouter), byte(dhcp4.OptionSubnetMask)}
 	opts[dhcp4.OptionHostName] = []byte(l.hostname)
 
-	pkt, err := backoffRetry(func() (*dhcp4.Packet, error) {
+	pkt, err := backoffRetry(l.resendMax, func() (*dhcp4.Packet, error) {
 		ok, ack, err := DhcpRequest(c, opts)
 		switch {
 		case err != nil:
@@ -261,7 +263,7 @@ func (l *DHCPLease) renew() error {
 	opts := make(dhcp4.Options)
 	opts[dhcp4.OptionClientIdentifier] = []byte(l.clientID)
 
-	pkt, err := backoffRetry(func() (*dhcp4.Packet, error) {
+	pkt, err := backoffRetry(l.resendMax, func() (*dhcp4.Packet, error) {
 		ok, ack, err := DhcpRenew(c, *l.ack, opts)
 		switch {
 		case err != nil:
@@ -343,7 +345,7 @@ func jitter(span time.Duration) time.Duration {
 	return time.Duration(float64(span) * (2.0*rand.Float64() - 1.0))
 }
 
-func backoffRetry(f func() (*dhcp4.Packet, error)) (*dhcp4.Packet, error) {
+func backoffRetry(resendMax time.Duration, f func() (*dhcp4.Packet, error)) (*dhcp4.Packet, error) {
 	var baseDelay time.Duration = resendDelay0
 	var sleepTime time.Duration
 
@@ -361,7 +363,7 @@ func backoffRetry(f func() (*dhcp4.Packet, error)) (*dhcp4.Packet, error) {
 
 		time.Sleep(sleepTime)
 
-		if baseDelay < resendDelayMax {
+		if baseDelay < resendMax {
 			baseDelay *= 2
 		} else {
 			break
